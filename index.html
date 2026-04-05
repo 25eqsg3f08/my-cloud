@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>统一ID网盘（必须输入ID才能读取）</title>
+    <script src="https://cdn.jsdelivr.net/npm/crypto-js@4.2.0/crypto-js.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        }
+        body {
+            background: #0b1020;
+            color: #e8eaf6;
+            padding: 20px;
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+        h1 {
+            color: #00ff9d;
+            margin-bottom: 12px;
+            font-size: 24px;
+        }
+        .desc {
+            color: #9fa8da;
+            margin-bottom: 24px;
+            font-size: 14px;
+        }
+        .card {
+            background: #121a33;
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 16px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        }
+        input[type="file"] {
+            color: #e8eaf6;
+            margin-bottom: 12px;
+            width: 100%;
+        }
+        input[type="text"] {
+            background: #1a2442;
+            border: 1px solid #39466e;
+            color: #e8eaf6;
+            padding: 10px;
+            border-radius: 8px;
+            width: 100%;
+            margin-bottom: 12px;
+        }
+        button {
+            background: #00ff9d;
+            color: #0b1020;
+            border: none;
+            padding: 10px 16px;
+            border-radius: 8px;
+            font-weight: bold;
+            cursor: pointer;
+            margin-right: 8px;
+            margin-bottom: 8px;
+        }
+        button.danger {
+            background: #ff5252;
+            color: white;
+        }
+        .file-list {
+            margin-top: 12px;
+        }
+        .file-item {
+            background: #1a2442;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .file-name {
+            color: #e8eaf6;
+            font-weight: 500;
+        }
+        .file-meta {
+            color: #9fa8da;
+            font-size: 12px;
+        }
+        .actions button {
+            padding: 6px 10px;
+            font-size: 12px;
+        }
+        .status {
+            color: #00ff9d;
+            font-size: 14px;
+            margin-top: 8px;
+        }
+        .id-section {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+        .id-section input {
+            flex: 1;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>统一ID网盘（必须输入ID才能读取）</h1>
+    <p class="desc">生成ID → 上传 → 别人输入ID → 才能看见</p>
+
+    <div class="card">
+        <div class="id-section">
+            <input type="text" id="userId" placeholder="输入统一ID（必须）">
+            <button onclick="generateId()">生成ID</button>
+            <button onclick="loadFiles()">读取（必须输入ID）</button>
+        </div>
+        <input type="file" id="fileInput" multiple>
+        <button onclick="uploadFile()">上传（面目全非）</button>
+        <div class="status" id="status"></div>
+    </div>
+
+    <div class="card">
+        <div class="file-list" id="fileList">请先输入ID并点击「读取」</div>
+    </div>
+</div>
+
+<script>
+const SECRET_KEY = "face-off-2026";
+
+// 生成随机ID
+function generateId() {
+    const id = Math.random().toString(36).substring(2, 12);
+    document.getElementById("userId").value = id;
+    document.getElementById("status").textContent = "已生成ID：" + id;
+}
+
+// 加密
+function encryptData(data) {
+    return CryptoJS.AES.encrypt(data, SECRET_KEY).toString();
+}
+
+// 解密
+function decryptData(encrypted) {
+    try {
+        const bytes = CryptoJS.AES.decrypt(encrypted, SECRET_KEY);
+        return bytes.toString(CryptoJS.enc.Utf8);
+    } catch (e) {
+        return null;
+    }
+}
+
+// 上传（绑定ID）
+async function uploadFile() {
+    const id = document.getElementById("userId").value.trim();
+    const input = document.getElementById("fileInput");
+    const status = document.getElementById("status");
+
+    if (!id) {
+        status.textContent = "必须先输入ID";
+        return;
+    }
+    if (!input.files.length) {
+        status.textContent = "请选择文件";
+        return;
+    }
+
+    status.textContent = "正在面目全非...";
+
+    const files = Array.from(input.files);
+    const storageKey = "netdisk_" + id;
+    const stored = JSON.parse(localStorage.getItem(storageKey) || "[]");
+
+    for (const file of files) {
+        const reader = new FileReader();
+        reader.onload = function () {
+            const base64 = reader.result;
+            const encrypted = encryptData(base64);
+
+            stored.push({
+                name: file.name,
+                size: file.size,
+                type: file.type,
+                data: encrypted,
+                time: Date.now()
+            });
+
+            localStorage.setItem(storageKey, JSON.stringify(stored));
+            status.textContent = "上传完成（ID：" + id + "）";
+            loadFiles();
+        };
+        reader.readAsDataURL(file);
+    }
+}
+
+// 读取（必须输入ID）
+function loadFiles() {
+    const id = document.getElementById("userId").value.trim();
+    const list = document.getElementById("fileList");
+    const status = document.getElementById("status");
+
+    if (!id) {
+        list.innerHTML = "请先输入ID";
+        return;
+    }
+
+    const storageKey = "netdisk_" + id;
+    const stored = JSON.parse(localStorage.getItem(storageKey) || "[]");
+
+    if (!stored.length) {
+        list.innerHTML = "该ID暂无文件";
+        status.textContent = "已读取ID：" + id;
+        return;
+    }
+
+    list.innerHTML = stored.map((f, i) => `
+        <div class="file-item">
+            <div>
+                <div class="file-name">${f.name}</div>
+                <div class="file-meta">${(f.size / 1024).toFixed(1)} KB · 面目全非</div>
+            </div>
+            <div class="actions">
+                <button onclick="viewFile('${id}', ${i})">查看（恢复）</button>
+                <button class="danger" onclick="deleteFile('${id}', ${i})">删除</button>
+            </div>
+        </div>
+    `).join("");
+
+    status.textContent = "已读取ID：" + id;
+}
+
+// 查看
+function viewFile(id, index) {
+    const storageKey = "netdisk_" + id;
+    const stored = JSON.parse(localStorage.getItem(storageKey) || "[]");
+    const file = stored[index];
+    if (!file) return;
+
+    const decrypted = decryptData(file.data);
+    if (!decrypted) {
+        alert("无法恢复：面目全非");
+        return;
+    }
+
+    const a = document.createElement("a");
+    a.href = decrypted;
+    a.download = file.name;
+    a.target = "_blank";
+    a.click();
+}
+
+// 删除
+function deleteFile(id, index) {
+    const storageKey = "netdisk_" + id;
+    const stored = JSON.parse(localStorage.getItem(storageKey) || "[]");
+    stored.splice(index, 1);
+    localStorage.setItem(storageKey, JSON.stringify(stored));
+    loadFiles();
+}
+</script>
+</body>
+</html>
